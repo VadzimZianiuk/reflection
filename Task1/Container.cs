@@ -12,11 +12,18 @@ namespace Task1
 
         public void AddAssembly(Assembly assembly)
         {
-            foreach (var type in CheckNull(assembly).DefinedTypes)
+            if (assembly is null)
             {
-                if (!type.IsAbstract)
+                throw new ArgumentNullException(nameof(assembly));
+            }
+
+            var types = assembly.DefinedTypes.Where(IsValidType);
+            foreach (var type in types)
+            {
+                var exportAttribute = type.GetCustomAttribute<ExportAttribute>(false);
+                if (exportAttribute != null)
                 {
-                    AddType(type, type.GetCustomAttribute<ExportAttribute>(false)?.Contract ?? type);
+                    AddType(type, exportAttribute.Contract ?? type);
                 }
             }
         }
@@ -25,68 +32,90 @@ namespace Task1
 
         public void AddType(Type type, Type baseType)
         {
-            if (CheckNull(type).IsAbstract)
-            {
-                throw new ArgumentException("Type is abstract", nameof(type));
-            }
-
-            if (!CheckNull(baseType).IsAssignableFrom(type))
-            {
-                throw new ArgumentException($"{baseType} is not assignable from {type}");
-            }
-
+            IsValidType(type);
+            IsValidBaseType(baseType, type);
+            
             if (container.ContainsKey(type))
             {
                 throw new ArgumentException("Type has already been added.", nameof(type));
             }
 
-            container.Add(type, type);
-            if (type != baseType)
-            {
-                container.Add(baseType, type);
-            }
+            container.Add(baseType, type);
         }
 
-        public T Get<T>()
+        public T Get<T>() => (T)GetInstance(typeof(T));
+        
+        private object GetInstance(Type sourceType)
         {
-            return GetHelper(typeof(T));
+            var type = GetImplementationType(sourceType);
 
-            dynamic GetHelper(Type sourceType)
-            {
-                if (!container.TryGetValue(sourceType, out var type))
-                {
-                    throw new ArgumentException($"Type {sourceType} is not added.", nameof(sourceType));
-                }
+            var ctor = type.GetConstructors()
+                .OrderByDescending(x => x.GetParameters().Length)
+                .First();
+            var args = ctor.GetParameters()
+                .Select(x => GetInstance(x.ParameterType)).ToArray();
 
-                var parameterInfos = Array.Empty<ParameterInfo>();
-                _ = type.GetConstructors()
-                    .Any(ci =>
-                    {
-                        parameterInfos = ci.GetParameters();
-                        return parameterInfos.Any(pi => !container.ContainsKey(pi.ParameterType));
-                    });
+            var obj = Activator.CreateInstance(type, args);
+            InjectProperties(obj);
 
-                var parameters = new object[parameterInfos.Length];
-                for (int i = 0; i < parameterInfos.Length; i++)
-                {
-                    //If we do not check cross-references when adding types, we will most likely end up in an endless loop. 
-                    parameters[i] = GetHelper(parameterInfos[i].ParameterType);
-                }
-                var obj = Activator.CreateInstance(type, parameters);
-
-                foreach (var propertyInfo in type.GetProperties())
-                {
-                    if (propertyInfo.GetCustomAttribute<ImportAttribute>() != null)
-                    {
-                        //If we do not check cross-references when adding types, we will most likely end up in an endless loop. 
-                        propertyInfo.SetValue(obj, GetHelper(container[propertyInfo.PropertyType]));
-                    }
-                }
-
-                return obj;
-            }
+            return obj;
         }
 
-        private static T CheckNull<T>(T obj) => obj ?? throw new ArgumentNullException(nameof(obj));
+        private static bool IsValidType(Type type)
+        {
+            if (type is null)
+            {
+                throw new ArgumentNullException(nameof(type));
+            }
+
+            return type.IsClass && !type.IsAbstract;
+        }
+
+        private static bool IsValidBaseType(Type baseType, Type type)
+        {
+            if (baseType is null)
+            {
+                throw new ArgumentNullException(nameof(baseType));
+            }
+
+            if (type is null)
+            {
+                throw new ArgumentNullException(nameof(type));
+            }
+
+            if (!baseType.IsAssignableFrom(type))
+            {
+                throw new ArgumentException($"{baseType} is not assignable from {type}");
+            }
+
+            return true;
+        }
+
+        private Type GetImplementationType(Type type)
+        {
+            if (container.TryGetValue(type, out var implementationType))
+            {
+                return implementationType;
+            }
+
+            return IsValidType(type) ? type : throw new ArgumentException($"Type {type} is not added.", nameof(type));
+        }
+
+        private void InjectProperties(object instance)
+        {
+            if (instance is null)
+            {
+                throw new ArgumentNullException(nameof(instance));
+            }
+
+            var propertyInfos= instance.GetType().GetProperties()
+                .Where(x => x.GetCustomAttribute<ImportAttribute>() != null);
+
+            foreach (var propertyInfo in propertyInfos)
+            {
+                //If we do not check cross-references when adding types, we will most likely end up in an endless loop. 
+                propertyInfo.SetValue(instance, GetInstance(propertyInfo.PropertyType));
+            }
+        }
     }
 }

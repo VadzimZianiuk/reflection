@@ -5,9 +5,9 @@ namespace Task2
 {
     public static class ObjectExtensions
     {
-        private const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
+        private const BindingFlags SearchFlags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
 
-        public static void SetReadOnlyProperty<T>(this T obj, string propertyName, object newValue)
+        public static void SetReadOnlyProperty(this object obj, string propertyName, object newValue)
         {
             if (obj is null)
             {
@@ -19,10 +19,10 @@ namespace Task2
                 throw new ArgumentNullException(nameof(propertyName));
             }
 
-            var type = typeof(T);
+            var type = obj.GetType();
             do
             {
-                var info = type.GetProperty(propertyName, Flags);
+                var info = type.GetProperty(propertyName, SearchFlags);
                 if (info != null)
                 {
                     if (info.CanWrite)
@@ -31,9 +31,11 @@ namespace Task2
                     }
                     else
                     {
-                        (type.GetField($"<{propertyName}>k__BackingField", Flags) ?? throw new InvalidOperationException($"Can't find auto field for {propertyName} property."))
-                            .SetValue(obj, newValue);
+                        var fieldInfo = type.GetField($"<{propertyName}>k__BackingField", SearchFlags)
+                            ?? throw new InvalidOperationException($"Can't find auto field for {propertyName} property.");
+                        fieldInfo.SetValue(obj, newValue);
                     }
+
                     return;
                 }
 
@@ -41,10 +43,10 @@ namespace Task2
             } 
             while (type != null);
 
-            throw new InvalidOperationException($"Type {typeof(T).FullName} hasn't {propertyName} property.");
+            throw new InvalidOperationException($"Type {obj.GetType().FullName} hasn't {propertyName} property.");
         }
-
-        public static void SetReadOnlyField<T>(this T obj, string filedName, object newValue)
+        
+        public static void SetReadOnlyField(this object obj, string filedName, object newValue)
         {
             if (obj is null)
             {
@@ -56,10 +58,10 @@ namespace Task2
                 throw new ArgumentNullException(nameof(filedName));
             }
 
-            var type = typeof(T);
+            var type = obj.GetType();
             do
             {
-                var info = type.GetField(filedName, Flags);
+                var info = type.GetField(filedName, SearchFlags);
                 if (info != null)
                 {
                     info.SetValue(obj, newValue);
@@ -70,7 +72,7 @@ namespace Task2
             } 
             while (type != null);
             
-            throw new InvalidOperationException($"Type {typeof(T).FullName} hasn't {filedName} field.");
+            throw new InvalidOperationException($"Type {obj.GetType().FullName} hasn't {filedName} field.");
         }
     }
 }
