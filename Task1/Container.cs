@@ -45,6 +45,7 @@ namespace Task1
 
         public T Get<T>() => (T)GetInstance(typeof(T));
         
+        //If we do not check cross-references when adding types, we will most likely end up in an endless loop. 
         private object GetInstance(Type sourceType)
         {
             var type = GetImplementationType(sourceType);
@@ -113,7 +114,6 @@ namespace Task1
 
             foreach (var propertyInfo in propertyInfos)
             {
-                //If we do not check cross-references when adding types, we will most likely end up in an endless loop. 
                 propertyInfo.SetValue(instance, GetInstance(propertyInfo.PropertyType));
             }
         }
